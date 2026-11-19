@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>QWESTEAR — Мишутка и заброшенный лес</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root { --bg:#120e1a; --panel:#1f1830; --ink:#f4ecd8; --dim:#9d93b5; --accent:#ffcf8a; --ok:#8fdc8f; --bad:#ff7b7b; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+    .screen { display: none; height: 100%; flex-direction: column; }
+    .screen.active { display: flex; }
+    button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid #3a2f55;
+      border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+    button:hover:not(:disabled) { border-color: var(--accent); }
+    button:disabled { opacity: .35; cursor: default; }
+    button.primary { background: #3d2b5e; border-color: var(--accent); }
+
+    /* Меню уровней */
+    #menu { padding: 16px; overflow: auto; align-items: center; }
+    #menu h1 { margin: 8px 0 2px; font-size: 22px; letter-spacing: .5px; }
+    #menu .sub { color: var(--dim); font-size: 14px; margin-bottom: 14px; text-align: center; }
+    .levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 10px;
+      width: 100%; max-width: 760px; }
+    .levels button { aspect-ratio: 1; font-size: 18px; font-weight: 600; padding: 0; }
+    .levels button.done { background: #2a4a33; border-color: #4f8a5b; }
+    .levels button.locked { opacity: .35; }
+    #menu .foot { margin-top: 16px; display: flex; gap: 8px; align-items: center; }
+    #menu .foot span { color: var(--dim); font-size: 13px; }
+
+    /* Игра */
+    #game-top { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
+    #game-top .title { flex: 1; font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #game-top button { padding: 6px 10px; font-size: 14px; }
+    #stage { flex: 1; min-height: 0; position: relative; margin: 0 6px; }
+    #scene { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 12px;
+      background: #000; touch-action: manipulation; cursor: pointer; }
+    #bottom { padding: 8px 10px 12px; }
+    #inv { display: flex; gap: 6px; flex-wrap: wrap; min-height: 28px; margin-bottom: 6px; }
+    .chip { font-size: 13px; background: #2c2347; border: 1px solid #4b3d70; border-radius: 999px; padding: 3px 10px; }
+    .chip.empty { background: none; border-style: dashed; color: var(--dim); }
+    #msg { min-height: 44px; font-size: 16px; line-height: 1.35; padding: 8px 12px; border-radius: 10px;
+      background: rgba(31,24,48,.85); transition: color .2s; }
+    #msg.bad { color: var(--bad); }
+    #msg.good { color: var(--ok); }
+    #hint { display: none; margin-top: 6px; color: var(--accent); font-size: 14px; }
+    #hint.show { display: block; }
+
+    /* Модальные окна */
+    .modal { position: fixed; inset: 0; background: rgba(5,3,10,.7); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+    .modal.show { display: flex; }
+    .card { background: var(--panel); border: 1px solid #3a2f55; border-radius: 16px; padding: 18px; width: min(340px, 100%); text-align: center; }
+    .card h2 { margin: 0 0 8px; font-size: 19px; }
+    .card p { color: var(--dim); margin: 0 0 14px; font-size: 14px; line-height: 1.4; }
+    .screenbox { font: 600 26px ui-monospace, Menlo, monospace; letter-spacing: 6px; background: #0a0812; border-radius: 10px;
+      padding: 10px; min-height: 52px; color: #7CFC7C; margin-bottom: 10px; }
+    .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .pad button { font-size: 20px; padding: 12px 0; }
+    .row { display: flex; gap: 8px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
+    .shake { animation: shake .35s; }
+    @keyframes shake { 10%,90%{transform:translateX(-2px)} 20%,80%{transform:translateX(4px)} 30%,50%,70%{transform:translateX(-6px)} 40%,60%{transform:translateX(6px)} }
+  </style>
+</head>
+<body>
+
+  <!-- Экран выбора уровня -->
+  <section id="menu" class="screen active">
+    <h1>Мишутка и заброшенный лес</h1>
+    <div class="sub">Головоломки без пиксель-хантинга: смотри, думай, действуй.</div>
+    <div class="levels" id="levels"></div>
+    <div class="foot">
+      <span id="progress-text"></span>
+      <button id="reset-progress">Сбросить прогресс</button>
+    </div>
+  </section>
+
+  <!-- Экран уровня -->
+  <section id="game" class="screen">
+    <div id="game-top">
+      <button id="back">Меню</button>
+      <div class="title" id="lvl-title"></div>
+      <button id="hint-btn">Подсказка</button>
+      <button id="reset-level">Заново</button>
+    </div>
+    <div id="stage">
+      <canvas id="scene" width="960" height="540"></canvas>
+    </div>
+    <div id="bottom">
+      <div id="inv"></div>
+      <div id="msg"></div>
+      <div id="hint"></div>
+    </div>
+  </section>
+
+  <!-- Цифровая панель -->
+  <div class="modal" id="keypad-modal">
+    <div class="card" id="keypad-card">
+      <h2 id="keypad-title">Панель</h2>
+      <p id="keypad-ask"></p>
+      <div class="screenbox" id="keypad-screen"></div>
+      <div class="pad" id="keypad-pad"></div>
+      <div class="row">
+        <button id="keypad-cancel">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Конец уровня -->
+  <div class="modal" id="win-modal">
+    <div class="card">
+      <h2 id="win-title">Уровень пройден</h2>
+      <p id="win-text"></p>
+      <div class="row">
+        <button id="win-menu">В меню</button>
+        <button id="win-next" class="primary">Дальше</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/logic.js"></script>
+  <script src="js/levels.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
